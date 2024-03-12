@@ -1,7 +1,8 @@
-import { ref, onBeforeMount, watch } from 'vue'
+import { useDebounceFn } from '@vueuse/core'
 import axios from 'axios'
-import { useQueryParams } from './useQueryParams'
+import { computed, onBeforeMount, ref, watch } from 'vue'
 import usePagination from './usePagination'
+import { useQueryParams } from './useQueryParams'
 
 export const PER_COUNT_PAGE = 9
 
@@ -46,14 +47,6 @@ export default function useServices() {
   const { queryParams } = useQueryParams()
   const { paginatedItems, currentPage, goToPage, isFirstPage, isLastPage, pageCount } = usePagination(services, PER_COUNT_PAGE)
 
-  watch(
-    () => queryParams.value.q,
-    async () => {
-      await getServices()
-      goToPage(1)
-    },
-  )
-
   const getServices = async (): Promise<void> => {
     try {
       // Initialize loading state
@@ -79,6 +72,31 @@ export default function useServices() {
       loading.value = false
     }
   }
+
+  const debouncedSearch = useDebounceFn(async () => {
+    await getServices()
+    goToPage(1)
+  }, 300, { maxWait: 5000 })
+
+  const pageAndQ = computed(() => {
+    const page = queryParams.value.page
+    const q = queryParams.value.q
+    return { page, q }
+  })
+
+  watch(
+    pageAndQ,
+    async ({ q: newQ, page: newPage }, { q }) => {
+      if (q !== newQ) {
+        await debouncedSearch()
+        return
+      }
+
+      if (newPage === '1' && typeof newQ === 'undefined') {
+        goToPage(1)
+      }
+    },
+  )
 
   onBeforeMount(async (): Promise<void> => {
     // Fetch services from the API
